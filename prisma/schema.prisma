@@ -1,0 +1,86 @@
+generator client {
+    provider = "prisma-client-js"
+    binaryTargets = ["native", "linux-musl-arm64-openssl-3.0.x"]
+    output = "/home/ubuntu/firsatradari/nextjs_space/node_modules/.prisma/client"
+}
+
+datasource db {
+    provider = "postgresql"
+    url      = env("DATABASE_URL")
+}
+
+model Product {
+  id                    Int              @id @default(autoincrement())
+  barcode               String           @unique
+  title                 String
+  brand                 String
+  category              String
+  imageUrl              String
+  lowestHistoricalPrice Float
+  createdAt             DateTime         @default(now())
+  merchantPrices        MerchantPrice[]
+  priceHistory          PriceHistory[]
+  trackedItems          TrackedItem[]
+
+  @@index([brand])
+  @@index([category])
+}
+
+model MerchantPrice {
+  id            Int      @id @default(autoincrement())
+  productId     Int
+  merchantName  String
+  price         Float
+  originalPrice Float?
+  stockStatus   String   @default("in_stock")
+  productUrl    String
+  isFlyerDeal   Boolean  @default(false)
+  flyerDate     DateTime?
+  updatedAt     DateTime @default(now())
+  product       Product  @relation(fields: [productId], references: [id])
+
+  @@index([productId])
+  @@index([merchantName])
+  @@index([isFlyerDeal])
+}
+
+model PriceHistory {
+  id        Int      @id @default(autoincrement())
+  productId Int
+  date      DateTime
+  price     Float
+  product   Product  @relation(fields: [productId], references: [id])
+
+  @@index([productId, date])
+}
+
+model TrackedItem {
+  id          Int      @id @default(autoincrement())
+  userId      String   @default("demo-user")
+  productId   Int
+  targetPrice Float
+  status      String   @default("active")
+  createdAt   DateTime @default(now())
+  product     Product  @relation(fields: [productId], references: [id])
+
+  @@index([userId])
+  @@index([productId])
+}
+
+model ClickAnalytics {
+  id           Int      @id @default(autoincrement())
+  merchantName String
+  productId    Int
+  clickedAt    DateTime @default(now())
+
+  @@index([merchantName])
+}
+
+model FlyerReminder {
+  id           Int      @id @default(autoincrement())
+  userId       String   @default("demo-user")
+  merchantName String
+  createdAt    DateTime @default(now())
+
+  @@unique([userId, merchantName])
+}
