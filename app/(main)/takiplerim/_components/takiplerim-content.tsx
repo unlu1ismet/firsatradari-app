@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Bell, Trash2, LinkIcon, CheckCircle2, Clock, Loader2, ArrowRight } from 'lucide-react';
+import { Bell, Trash2, LinkIcon, CheckCircle2, Clock, Loader2, ArrowRight, BellRing } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -27,12 +27,50 @@ interface TrackedItem {
   currentPrice: number | null;
 }
 
+function urlBase64ToUint8Array(base64String: string) {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/\-/g, '+').replace(/_/g, '/');
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+}
+
 export function TakiplerimContent() {
   const router = useRouter();
   const [items, setItems] = useState<TrackedItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [urlInput, setUrlInput] = useState('');
   const [urlLoading, setUrlLoading] = useState(false);
+  const [isPushEnabled, setIsPushEnabled] = useState(false);
+  const [isPushLoading, setIsPushLoading] = useState(false);
+
+  useEffect(() => {
+    const checkSubscription = async () => {
+      if ('serviceWorker' in navigator && 'PushManager' in window) {
+        const registration = await navigator.serviceWorker.getRegistration();
+        if (registration) {
+          const subscription = await registration.pushManager.getSubscription();
+          
+          if (subscription) {
+            setIsPushEnabled(true);
+            
+            // Tarayıcı izinli ama veritabanı sıfırlanmışsa diye arka planda sessizce tekrar kaydediyoruz
+            fetch('/api/subscribe', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(subscription),
+            }).catch(() => {}); 
+          } else {
+            setIsPushEnabled(false);
+          }
+        }
+      }
+    };
+    checkSubscription();
+  }, []);
 
   const fetchItems = () => {
     setLoading(true);
@@ -46,6 +84,66 @@ export function TakiplerimContent() {
   useEffect(() => {
     fetchItems();
   }, []);
+
+  const subscribeToPush = async () => {
+    setIsPushLoading(true);
+    try {
+      if (!('serviceWorker' in navigator)) {
+        toast.error('Tarayıcınız arka plan bildirimlerini desteklemiyor.');
+        setIsPushLoading(false);
+        return;
+      }
+
+      if (Notification.permission === 'denied') {
+        toast.error('Bildirimler tarayıcınız tarafından engellenmiş.', {
+          description: 'Adres çubuğundaki kilit ikonuna tıklayıp bildirimlere izin vermelisiniz.',
+          duration: 6000,
+        });
+        setIsPushLoading(false);
+        return;
+      }
+
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') {
+        toast.error('Bildirim gönderebilmemiz için izin vermeniz gerekiyor.');
+        setIsPushLoading(false);
+        return;
+      }
+
+      await navigator.serviceWorker.register('/sw.js');
+      const readyRegistration = await navigator.serviceWorker.ready;
+      const publicVapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+
+      if (!publicVapidKey) {
+        toast.error('Sistem Hatası: VAPID anahtarı bulunamadı.');
+        setIsPushLoading(false);
+        return;
+      }
+
+      const subscription = await readyRegistration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(publicVapidKey),
+      });
+
+      const res = await fetch('/api/subscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(subscription),
+      });
+
+      if (res.ok) {
+        setIsPushEnabled(true);
+        toast.success('Bildirimler başarıyla açıldı!');
+      } else {
+        toast.error('Abonelik kaydedilemedi.');
+      }
+    } catch (error: any) {
+      console.error('Push hatası:', error);
+      toast.error('İşlem başarısız.', { description: error.message });
+    } finally {
+      setIsPushLoading(false);
+    }
+  };
 
   const deleteItem = async (id: number) => {
     try {
@@ -95,6 +193,25 @@ export function TakiplerimContent() {
           </p>
         </div>
       </FadeIn>
+
+      {!isPushEnabled && (
+        <FadeIn delay={0.05}>
+          <Card className="bg-primary/5 border-primary/20">
+            <CardContent className="p-4 flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <BellRing className="w-5 h-5 text-primary shrink-0" />
+                <div>
+                  <p className="text-sm font-medium">Arka Plan Bildirimleri</p>
+                  <p className="text-xs text-muted-foreground">Site kapalıyken de indirimleri kaçırmayın.</p>
+                </div>
+              </div>
+              <Button size="sm" onClick={subscribeToPush} disabled={isPushLoading} className="shrink-0 min-w-[80px]">
+                {isPushLoading ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Aktif Et'}
+              </Button>
+            </CardContent>
+          </Card>
+        </FadeIn>
+      )}
 
       <FadeIn delay={0.1}>
         <Card>

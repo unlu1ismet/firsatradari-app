@@ -84,3 +84,16 @@ model FlyerReminder {
 
   @@unique([userId, merchantName])
 }
+
+
+// Bildirim sistemi için yeni eklenen tablo
+model PushSubscription {
+  id        Int      @id @default(autoincrement())
+  userId    String   @default("demo-user")
+  endpoint  String   @unique
+  auth      String
+  p256dh    String
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
